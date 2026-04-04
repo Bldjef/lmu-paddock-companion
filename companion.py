@@ -89,7 +89,7 @@ def load_settings():
             with open(SETTINGS_FILE, 'r') as f:
                 return json.load(f)
         except: pass
-    return {"minimize_to_tray": True}
+    return {"minimize_to_tray": True, "has_seen_welcome": False}
 
 def save_settings(settings):
     try:
@@ -373,6 +373,62 @@ class PaddockCompanionApp(ctk.CTk):
 
         self.log_to_console("System initialized.")
         self.check_authentication()
+        
+        # Check if we should show the welcome popup
+        self.after(500, self.show_welcome_popup)
+
+    def show_welcome_popup(self):
+        """Displays a one-time welcome and instructions popup."""
+        if not self.settings.get("has_seen_welcome", False):
+            popup = ctk.CTkToplevel(self)
+            popup.title("Welcome to LMU Paddock!")
+            popup.geometry("450x350")
+            popup.resizable(False, False)
+            popup.attributes("-topmost", True)
+            popup.configure(fg_color="#1B1B1D")
+            
+            # Make the popup modal (prevents interaction with main window until dismissed)
+            popup.grab_set()
+
+            # Header
+            header_lbl = ctk.CTkLabel(popup, text="WELCOME TO THE GRID!", font=("Space Grotesk", 18, "bold", "italic"), text_color="#E8173A")
+            header_lbl.pack(pady=(20, 10))
+
+            # Main instructions
+            intro_text = (
+                "To get started, click the 'LOGIN WITH BROWSER' button on the main window "
+                "to securely connect your LMU Paddock account."
+            )
+            intro_lbl = ctk.CTkLabel(popup, text=intro_text, font=("Space Grotesk", 12), justify="center", wraplength=380, text_color="white")
+            intro_lbl.pack(padx=20, pady=(0, 15))
+
+            # Important Warning Container
+            warning_frame = ctk.CTkFrame(popup, fg_color="#201F21", border_width=1, border_color="#353437", corner_radius=5)
+            warning_frame.pack(padx=20, pady=(0, 20), fill="x")
+
+            warning_title = ctk.CTkLabel(warning_frame, text="⚠️ IMPORTANT: CAR SETUPS", font=("Space Grotesk", 11, "bold"), text_color="#FFD700")
+            warning_title.pack(pady=(10, 5))
+
+            warning_text = (
+                "Due to current game limitations, your setup (Brake Bias, TC, ABS, etc.) "
+                "is recorded EXACTLY as it is when you drive out of the garage. \n\n"
+                "Live adjustments made on-track are not yet captured."
+            )
+            warning_lbl = ctk.CTkLabel(warning_frame, text=warning_text, font=("Space Grotesk", 11), justify="center", wraplength=340, text_color="#a1a1aa")
+            warning_lbl.pack(padx=10, pady=(0, 10))
+
+            # Close logic
+            def close_popup():
+                self.settings["has_seen_welcome"] = True
+                save_settings(self.settings)
+                popup.grab_release()
+                popup.destroy()
+
+            # Bind the standard window 'X' close button to also save the setting
+            popup.protocol("WM_DELETE_WINDOW", close_popup)
+            
+            btn = ctk.CTkButton(popup, text="GOT IT, LET'S RACE", font=("Space Grotesk", 12, "bold", "italic"), fg_color="#E8173A", hover_color="#bf002a", command=close_popup)
+            btn.pack(pady=(0, 20))
 
     def update_checker_loop(self):
         """ Runs in background, checks for updates every hour """
@@ -404,6 +460,8 @@ class PaddockCompanionApp(ctk.CTk):
                         logging.error(f"Failed to trigger tray notification: {e}")
                 
                 return True
+        except json.JSONDecodeError:
+            logging.warning("Update check skipped: version.json not found or invalid on server.")
         except Exception as e:
             logging.error(f"Update check failed: {e}")
         return False
@@ -524,6 +582,12 @@ class PaddockCompanionApp(ctk.CTk):
         if self.collector and self.collector.is_running: return
         self.log_to_console("Authenticating Telemetry Engine...")
         self.collector = TelemetryCollector(self.log_to_console, self.update_keyring_tokens, access_token, refresh_token)
+        
+        if not self.collector.user_id:
+            self.log_to_console("Session expired or invalid. Please log in again.")
+            self.logout()
+            return
+            
         self.collector.start()
 
     def logout(self):
