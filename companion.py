@@ -26,7 +26,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     print("[ERROR] Supabase credentials missing! Check your .env file.")
 
 # --- CONFIGURATION ---
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 APP_NAME = "LMU Paddock Companion"
 AUTH_URL = "https://lmu-pitwall.vercel.app/app-auth" 
 SUPPORT_URL = "https://lmu-pitwall.vercel.app/support"  
@@ -236,13 +236,23 @@ class TelemetryCollector:
                 if player_data:
                     real_car_model = self.fetch_real_car_model()
                     
-                    # --- Extract Car Class ---
-                    car_class = player_data.get('carClass', 'Unknown Class')
+                    # --- Extract & Normalize Car Class ---
+                    raw_class = player_data.get('carClass', 'Unknown Class')
+                    
+                    # Normalisation mapping for Le Mans Ultimate API
+                    class_map = {
+                        "Hyper": "Hypercar",
+                        "LMP_ELMS" : "LMP2",
+                        "LMP3" : "LMP3",
+                        "GT3": "LMGT3",
+                        "GTE" : "GTE",
+                    }
+                    car_class = class_map.get(raw_class, raw_class)
                     
                     if real_car_model: current_car = real_car_model
                     else:
                         vehicle_name = player_data.get('vehicleName', 'Unknown Car')
-                        current_car = f"{car_class} - {vehicle_name}" if car_class else vehicle_name
+                        current_car = vehicle_name
                         
                     driver_name = player_data.get('driverName', 'Unknown Driver')
                     current_last_lap = float(player_data.get('lastLapTime', -1.0))
@@ -256,7 +266,6 @@ class TelemetryCollector:
                     if current_last_lap > 0 and current_last_lap != last_saved_raw_time:
                         lap_time_str = format_laptime(current_last_lap)
                         
-                        # --- Include car_class in Payload ---
                         payload = {
                             "user_id": self.user_id, "track": track_name, "car": current_car, 
                             "car_class": car_class,
@@ -387,7 +396,6 @@ class PaddockCompanionApp(ctk.CTk):
             popup.attributes("-topmost", True)
             popup.configure(fg_color="#1B1B1D")
             
-            # Make the popup modal (prevents interaction with main window until dismissed)
             popup.grab_set()
 
             # Header
@@ -417,14 +425,12 @@ class PaddockCompanionApp(ctk.CTk):
             warning_lbl = ctk.CTkLabel(warning_frame, text=warning_text, font=("Space Grotesk", 11), justify="center", wraplength=340, text_color="#a1a1aa")
             warning_lbl.pack(padx=10, pady=(0, 10))
 
-            # Close logic
             def close_popup():
                 self.settings["has_seen_welcome"] = True
                 save_settings(self.settings)
                 popup.grab_release()
                 popup.destroy()
 
-            # Bind the standard window 'X' close button to also save the setting
             popup.protocol("WM_DELETE_WINDOW", close_popup)
             
             btn = ctk.CTkButton(popup, text="GOT IT, LET'S RACE", font=("Space Grotesk", 12, "bold", "italic"), fg_color="#E8173A", hover_color="#bf002a", command=close_popup)
@@ -446,22 +452,17 @@ class PaddockCompanionApp(ctk.CTk):
             self.update_download_url = data.get("url", SUPPORT_URL)
 
             if latest_version > APP_VERSION:
-                # 1. Update UI button
                 self.after(0, self.show_update_button, latest_version)
-                
-                # 2. Show Windows balloon notification if app is in system tray
                 if self.tray_icon:
                     try:
                         self.tray_icon.notify(
                             f"Version {latest_version} is available. Click to download.",
                             title="LMU Paddock Update"
                         )
-                    except Exception as e:
-                        logging.error(f"Failed to trigger tray notification: {e}")
-                
+                    except: pass
                 return True
         except json.JSONDecodeError:
-            logging.warning("Update check skipped: version.json not found or invalid on server.")
+            logging.warning("Update check skipped: version.json not found or invalid.")
         except Exception as e:
             logging.error(f"Update check failed: {e}")
         return False
@@ -603,7 +604,7 @@ if __name__ == "__main__":
     lock = check_single_instance()
     if not lock:
         import tkinter.messagebox as mb
-        mb.showwarning("App Already Running", "LMU Paddock Companion is already running in the background or system tray.")
+        mb.showwarning("App Already Running", "LMU Paddock Companion is already running.")
         sys.exit(0)
     
     app = PaddockCompanionApp()
