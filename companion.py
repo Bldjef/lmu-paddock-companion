@@ -15,16 +15,6 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw
 import pystray
 from supabase import create_client, Client
-from dotenv import load_dotenv
-
-env_path = get_resource_path(".env")
-load_dotenv(env_path)
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("[ERROR] Supabase credentials missing! Check your .env file.")
 
 # --- CONFIGURATION ---
 APP_VERSION = "1.0.2"
@@ -36,6 +26,8 @@ PORT = 42069
 APPDATA_DIR = os.path.join(os.getenv('APPDATA'), 'LMUPaddock')
 SETTINGS_FILE = os.path.join(APPDATA_DIR, 'settings.json')
 LOCK_FILE = os.path.join(APPDATA_DIR, 'companion.lock')
+SUPABASE_URL = "https://qumgjoricnkzpopzevwl.supabase.co"
+SUPABASE_KEY = "sb_publishable_MymWCvMB8AYaPNDGLBbRoA_bWWxcbL3"
 
 if not os.path.exists(APPDATA_DIR):
     os.makedirs(APPDATA_DIR)
@@ -494,16 +486,28 @@ class PaddockCompanionApp(ctk.CTk):
             self.quit_app()
 
     def hide_window(self):
-        self.withdraw()
-        if not self.tray_icon:
-            menu = pystray.Menu(
-                pystray.MenuItem('Open Dashboard', self.show_window),
-                pystray.MenuItem('Exit Companion', self.quit_app)
-            )
-            icon_image = Image.open(get_resource_path("logo.ico"))
-            self.tray_icon = pystray.Icon("LMU_Paddock", icon_image, f"{APP_NAME} (Running)", menu)
-            threading.Thread(target=self.tray_icon.run, daemon=True).start()
-        self.log_to_console("Monitoring continued in background.")
+            self.withdraw() 
+            
+            if not self.tray_icon:
+                menu = pystray.Menu(
+                    pystray.MenuItem('Open Dashboard', self.show_window, default=True),
+                    pystray.MenuItem('Exit Companion', self.quit_app)
+                )
+                try:
+                    icon_path = get_resource_path("logo.ico")
+                    if os.path.exists(icon_path):
+                        icon_image = Image.open(icon_path)
+                    else:
+                        icon_image = Image.new('RGB', (64, 64), color=(232, 23, 58))
+                    
+                    self.tray_icon = pystray.Icon("LMU_Paddock", icon_image, f"{APP_NAME} (Running)", menu)
+                    
+                    self.tray_icon.run_detached() 
+                except Exception as e:
+                    logging.error(f"Could not setup tray icon: {e}")
+                    self.deiconify() 
+
+            self.log_to_console("Monitoring continued in background.")
 
     def show_window(self, icon=None, item=None):
         if self.tray_icon:
