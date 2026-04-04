@@ -15,7 +15,6 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw
 import pystray
 from supabase import create_client, Client
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,12 +29,12 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 APP_VERSION = "1.0.1"
 APP_NAME = "LMU Paddock Companion"
 AUTH_URL = "https://lmu-pitwall.vercel.app/app-auth" 
-SUPPORT_URL = "https://lmu-pitwall.vercel.app/support"
+SUPPORT_URL = "https://lmu-pitwall.vercel.app/support"  
 UPDATE_URL = "https://lmu-pitwall.vercel.app/version.json"
 PORT = 42069
 APPDATA_DIR = os.path.join(os.getenv('APPDATA'), 'LMUPaddock')
 SETTINGS_FILE = os.path.join(APPDATA_DIR, 'settings.json')
-LOCK_FILE = os.path.join(APPDATA_DIR, 'companion.lock') # For already running check
+LOCK_FILE = os.path.join(APPDATA_DIR, 'companion.lock')
 
 if not os.path.exists(APPDATA_DIR):
     os.makedirs(APPDATA_DIR)
@@ -53,14 +52,12 @@ logging.basicConfig(
 
 # --- HELPER FUNCTIONS ---
 def check_single_instance():
-    """ Checks if the app is already running using a lock file """
     if os.path.exists(LOCK_FILE):
         try:
             os.remove(LOCK_FILE)
         except OSError:
-            return False # File is locked by another process
+            return False
     try:
-        # Create and keep the file open to lock it
         f = open(LOCK_FILE, 'w')
         f.write(str(os.getpid()))
         return f
@@ -68,7 +65,6 @@ def check_single_instance():
         return False
 
 def get_resource_path(relative_path):
-    """ Get absolute path to resource (required for PyInstaller) """
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -138,7 +134,6 @@ class TelemetryCollector:
         self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         self.auth_subscription = None
         try:
-            # Set session and subscribe to automatic token refreshes
             self.supabase.auth.set_session(access_token, refresh_token)
             self.auth_subscription = self.supabase.auth.on_auth_state_change(self._handle_auth_change)
             
@@ -149,7 +144,6 @@ class TelemetryCollector:
             self.user_id = None
 
     def _handle_auth_change(self, event, session):
-        """ Handles background JWT refresh by syncing tokens back to the UI/Keyring """
         if event == "TOKEN_REFRESHED" and session:
             self.auth_update_callback(session.access_token, session.refresh_token)
             self.ui_callback("[SYS] Security tokens rotated and secured.")
@@ -242,9 +236,11 @@ class TelemetryCollector:
                 if player_data:
                     real_car_model = self.fetch_real_car_model()
                     
+                    # --- Extract Car Class ---
+                    car_class = player_data.get('carClass', 'Unknown Class')
+                    
                     if real_car_model: current_car = real_car_model
                     else:
-                        car_class = player_data.get('carClass', '')
                         vehicle_name = player_data.get('vehicleName', 'Unknown Car')
                         current_car = f"{car_class} - {vehicle_name}" if car_class else vehicle_name
                         
@@ -254,13 +250,16 @@ class TelemetryCollector:
                     if current_car != last_car_name and current_car != 'Unknown Car':
                         last_car_name = current_car
                         last_saved_raw_time = current_last_lap 
-                        self.ui_callback(f"[TRACKING] Vehicle: {current_car}")
+                        self.ui_callback(f"[TRACKING] Class: {car_class} | Vehicle: {current_car}")
                         self.ui_callback(f"[SYS] Driver Recognized: {driver_name}")
 
                     if current_last_lap > 0 and current_last_lap != last_saved_raw_time:
                         lap_time_str = format_laptime(current_last_lap)
+                        
+                        # --- Include car_class in Payload ---
                         payload = {
                             "user_id": self.user_id, "track": track_name, "car": current_car, 
+                            "car_class": car_class,
                             "lap_time": lap_time_str, "raw_time": current_last_lap, 
                             "abs": base_setup["abs"], "brake_bias": base_setup["bb"], 
                             "tc_onboard": base_setup["tc"], "tc_power_cut": base_setup["tc_cut"], 
@@ -277,7 +276,6 @@ class TelemetryCollector:
                 time.sleep(0.5)
 
             except Exception as e:
-                err_msg = str(e)
                 if connected_to_game:
                     self.ui_callback("Awaiting Game Connection...")
                     connected_to_game = False
@@ -342,7 +340,8 @@ class PaddockCompanionApp(ctk.CTk):
 
         self.update_btn = ctk.CTkButton(self.header_frame, text="UPDATE AVAILABLE", font=("Space Grotesk", 10, "bold"), fg_color="#4AE176", text_color="black", hover_color="#36b85a", height=24, command=self.open_update_link)
         
-        threading.Thread(target=self.check_for_updates, daemon=True).start()
+        # Start periodic update checker
+        threading.Thread(target=self.update_checker_loop, daemon=True).start()
 
         self.auth_frame = ctk.CTkFrame(self.main_frame, fg_color="#1B1B1D", border_width=2, border_color="#353437", corner_radius=0)
         self.auth_frame.pack(fill="x", pady=(0, 20), ipadx=10, ipady=10)
@@ -375,6 +374,14 @@ class PaddockCompanionApp(ctk.CTk):
         self.log_to_console("System initialized.")
         self.check_authentication()
 
+    def update_checker_loop(self):
+        """ Runs in background, checks for updates every hour """
+        while True:
+            has_update = self.check_for_updates()
+            if has_update:
+                break # Stop loop once we notify the user
+            time.sleep(3600) # Check every 1 hour
+
     def check_for_updates(self):
         try:
             req = urllib.request.urlopen(UPDATE_URL, timeout=3.0)
@@ -383,9 +390,23 @@ class PaddockCompanionApp(ctk.CTk):
             self.update_download_url = data.get("url", SUPPORT_URL)
 
             if latest_version > APP_VERSION:
+                # 1. Update UI button
                 self.after(0, self.show_update_button, latest_version)
+                
+                # 2. Show Windows balloon notification if app is in system tray
+                if self.tray_icon:
+                    try:
+                        self.tray_icon.notify(
+                            f"Version {latest_version} is available. Click to download.",
+                            title="LMU Paddock Update"
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to trigger tray notification: {e}")
+                
+                return True
         except Exception as e:
             logging.error(f"Update check failed: {e}")
+        return False
 
     def show_update_button(self, new_version):
         self.update_btn.configure(text=f"UPDATE v{new_version} AVAILABLE")
@@ -435,7 +456,6 @@ class PaddockCompanionApp(ctk.CTk):
             self.tray_icon.stop()
         if self.collector:
             self.collector.stop()
-        # Close the lock file before exiting
         if hasattr(self, 'lock_file'):
             self.lock_file.close()
             try: os.remove(LOCK_FILE)
@@ -454,7 +474,6 @@ class PaddockCompanionApp(ctk.CTk):
         logging.info(message)
 
     def update_keyring_tokens(self, acc, ref):
-        """ Syncs tokens refreshed in background back to Keyring """
         keyring.set_password(APP_NAME, "access_token", acc)
         keyring.set_password(APP_NAME, "refresh_token", ref)
 
@@ -517,14 +536,12 @@ class PaddockCompanionApp(ctk.CTk):
         self.show_login_ui()
 
 if __name__ == "__main__":
-    # CHECK IF ALREADY RUNNING
     lock = check_single_instance()
     if not lock:
-        # If lock fails, find existing window if possible or just exit
         import tkinter.messagebox as mb
         mb.showwarning("App Already Running", "LMU Paddock Companion is already running in the background or system tray.")
         sys.exit(0)
     
     app = PaddockCompanionApp()
-    app.lock_file = lock # Keep reference so it stays locked
+    app.lock_file = lock 
     app.mainloop()
