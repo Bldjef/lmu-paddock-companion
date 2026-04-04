@@ -17,7 +17,8 @@ import pystray
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-load_dotenv()
+env_path = get_resource_path(".env")
+load_dotenv(env_path)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
