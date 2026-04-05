@@ -163,15 +163,26 @@ class TelemetryCollector:
         except: 
             return None
 
-    def fetch_real_car_model(self):
+    def fetch_garage_summary(self):
+        """ Fetch both the real car model and the specific track layout name """
         url = "http://localhost:6397/rest/garage/summary"
+        summary = {"car": None, "track": None}
         try:
             req = urllib.request.urlopen(url, timeout=0.8)
             data = json.loads(req.read())
+            
+            # Fetch Car
             tree_path = data.get("car", {}).get("displayProperties", {}).get("fullTreePath", "")
-            if tree_path: return tree_path.split(",")[-1].strip()
-        except: return None
-        return None
+            if tree_path: 
+                summary["car"] = tree_path.split(",")[-1].strip()
+                
+            # Fetch Track Layout Name
+            track_name = data.get("track", {}).get("displayProperties", {}).get("name", "")
+            if track_name: 
+                summary["track"] = track_name.strip()
+                
+        except: pass
+        return summary
 
     def start(self):
         self.is_running = True
@@ -199,6 +210,7 @@ class TelemetryCollector:
 
         while self.is_running:
             try:
+                # Basic session fallback for track name
                 try:
                     sess_req = urllib.request.urlopen(session_url, timeout=0.5)
                     sess_data = json.loads(sess_req.read())
@@ -227,7 +239,11 @@ class TelemetryCollector:
                         break
 
                 if player_data:
-                    real_car_model = self.fetch_real_car_model()
+                    # Fetch detailed telemetry (Specific Track Layout & Car Model)
+                    garage_summary = self.fetch_garage_summary()
+                    
+                    if garage_summary["track"]:
+                        track_name = garage_summary["track"]  # Overwrite shortName with specific layout name
                     
                     # --- Extract & Normalize Car Class ---
                     raw_class = player_data.get('carClass', 'Unknown Class')
@@ -242,10 +258,10 @@ class TelemetryCollector:
                     }
                     car_class = class_map.get(raw_class, raw_class)
                     
-                    if real_car_model: current_car = real_car_model
+                    if garage_summary["car"]: 
+                        current_car = garage_summary["car"]
                     else:
-                        vehicle_name = player_data.get('vehicleName', 'Unknown Car')
-                        current_car = vehicle_name
+                        current_car = player_data.get('vehicleName', 'Unknown Car')
                         
                     driver_name = player_data.get('driverName', 'Unknown Driver')
                     current_last_lap = float(player_data.get('lastLapTime', -1.0))
