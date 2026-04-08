@@ -30,8 +30,8 @@ At the bottom of the Companion app, you will find a few useful settings:
 
 # SUPPORT & FEEDBACK
 Having issues or want to suggest a new feature? We're here to help!
-* Support Page: https://lmu-pitwall.vercel.app/support
-* Homepage: https://lmu-pitwall.vercel.app/
+* Support Page: https://lmupaddock.com/support
+* Homepage: https://lmupaddock.com/
 * Discord: https://discord.gg/tHH6hwDZrW
 
 See you on the track!

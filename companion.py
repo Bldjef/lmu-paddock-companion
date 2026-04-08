@@ -19,9 +19,9 @@ from supabase import create_client, Client
 # --- CONFIGURATION ---
 APP_VERSION = "1.0.2"
 APP_NAME = "LMU Paddock Companion"
-AUTH_URL = "https://lmu-pitwall.vercel.app/app-auth" 
-SUPPORT_URL = "https://lmu-pitwall.vercel.app/support"  
-UPDATE_URL = "https://lmu-pitwall.vercel.app/version.json"
+AUTH_URL = "https://lmupaddock.com/app-auth" 
+SUPPORT_URL = "https://lmupaddock.com/support"  
+UPDATE_URL = "https://lmupaddock.com/version.json"
 PORT = 42069
 APPDATA_DIR = os.path.join(os.getenv('APPDATA'), 'LMUPaddock')
 SETTINGS_FILE = os.path.join(APPDATA_DIR, 'settings.json')
