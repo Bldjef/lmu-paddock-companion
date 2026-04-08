@@ -17,7 +17,7 @@ import pystray
 from supabase import create_client, Client
 
 # --- CONFIGURATION ---
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 APP_NAME = "LMU Paddock Companion"
 AUTH_URL = "https://lmupaddock.com/app-auth" 
 SUPPORT_URL = "https://lmupaddock.com/support"  
