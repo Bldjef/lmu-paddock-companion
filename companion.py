@@ -287,9 +287,19 @@ class TelemetryCollector:
                             self.supabase.table("laps").insert(payload).execute()
                             self.ui_callback(f"[SUCCESS] Lap Recorded: {lap_time_str} on {track_name}")
                         except Exception as e:
-                            self.ui_callback(f"[ERROR] DB Upload Failed: {e}")
-                            
-                        last_saved_raw_time = current_last_lap
+                            err_msg = str(e)
+                            if "JWT expired" in err_msg or "PGRST303" in err_msg:
+                                self.ui_callback("[SYS] Security token expired. Requesting a fresh one...")
+                                try:
+                                    self.supabase.auth.refresh_session()
+                                    self.supabase.table("laps").insert(payload).execute()
+                                    self.ui_callback(f"[SUCCESS] Lap Recorded (After Refresh): {lap_time_str} on {track_name}")
+                                except Exception as refresh_err:
+                                    self.ui_callback(f"[ERROR] Token refresh failed: {refresh_err}. Please restart connection.")
+                            else:
+                                self.ui_callback(f"[ERROR] DB Upload Failed: {e}")
+                                
+                            last_saved_raw_time = current_last_lap
 
                 time.sleep(0.5)
 
@@ -457,7 +467,7 @@ class PaddockCompanionApp(ctk.CTk):
         try:
             req = urllib.request.urlopen(UPDATE_URL, timeout=3.0)
             data = json.loads(req.read())
-            latest_version = data.get("version", "1.0.0")
+            latest_version = data.get("version", "1.0.3")
             self.update_download_url = data.get("url", SUPPORT_URL)
 
             if latest_version > APP_VERSION:
