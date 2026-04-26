@@ -114,7 +114,8 @@ def toggle_autostart(enable):
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
         if enable:
-            app_path = f'"{sys.executable}"' if getattr(sys, 'frozen', False) else f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+            base_cmd = f'"{sys.executable}"' if getattr(sys, 'frozen', False) else f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+            app_path = f'{base_cmd} --minimized'
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, app_path)
         else:
             try: winreg.DeleteValue(key, APP_NAME)
@@ -218,6 +219,8 @@ class TelemetryCollector:
         last_saved_raw_time = -1.0 
         last_car_name = ""
         track_name = "Unknown Track"
+        track_venue = None
+        track_length_m = None
         base_setup = {"bb": 50.0, "tc": 0, "abs": 0, "tc_cut": 0, "tc_slip": 0, "wing": 0}
         connected_to_game = False
 
@@ -228,6 +231,14 @@ class TelemetryCollector:
                     sess_data = json.loads(sess_req.read())
                     if isinstance(sess_data, dict) and 'trackName' in sess_data:
                         track_name = clean_string(sess_data['trackName'])
+                        # Canonical venue + length so the DB trigger can resolve track_id
+                        venue_raw = sess_data.get("trackVenueName") or sess_data.get("trackVenue")
+                        if venue_raw:
+                            track_venue = clean_string(venue_raw)
+                        length_raw = sess_data.get("lapDistance") or sess_data.get("trackLength")
+                        if length_raw is not None:
+                            try: track_length_m = float(length_raw)
+                            except: pass
                         self.live_weather_cache["ambientTemp"] = float(sess_data.get("ambientTemp", 20.0))
                         self.live_weather_cache["trackTemp"] = float(sess_data.get("trackTemp", 25.0))
                         self.live_weather_cache["raining"] = bool(sess_data.get("raining", False))
@@ -276,7 +287,9 @@ class TelemetryCollector:
                             "car_class": car_class, "lap_time": lap_time_str, "raw_time": current_last_lap, 
                             "abs": base_setup["abs"], "brake_bias": base_setup["bb"], 
                             "tc_onboard": base_setup["tc"], "tc_power_cut": base_setup["tc_cut"], 
-                            "tc_slip_angle": base_setup["tc_slip"], "rear_wing": base_setup["wing"]
+                            "tc_slip_angle": base_setup["tc_slip"], "rear_wing": base_setup["wing"],
+                            "track_venue": track_venue,
+                            "track_length_m": track_length_m,
                         }
                         try:
                             self.supabase.table("laps").insert(payload).execute()
@@ -1636,4 +1649,9 @@ if __name__ == "__main__":
     
     app = PaddockCompanionApp()
     app.lock_file = lock 
+    # Refresh autostart entry so existing installs pick up the --minimized flag.
+    if is_autostart_enabled():
+        toggle_autostart(True)
+    if "--minimized" in sys.argv and app.settings.get("minimize_to_tray", True):
+        app.after(0, app.hide_window)
     app.mainloop()
